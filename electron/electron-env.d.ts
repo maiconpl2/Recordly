@@ -242,7 +242,7 @@ interface Window {
 		authStorageAvailable: () => Promise<boolean>;
 		authStorageMigrate: (items: Record<string, string>) => Promise<void>;
 		authStorageGetItem: (key: string) => Promise<string | null>;
-		authStorageSetItem: (key: string, value: string) => Promise<void>;
+		authStorageSetItem: (key: string, value: string) => Promise<void | false>;
 		authStorageRemoveItem: (key: string) => Promise<void>;
 		hudOverlaySetIgnoreMouse: (ignore: boolean) => void;
 		hudOverlaySetSourceSelectionActive: (active: boolean) => void;
@@ -253,6 +253,15 @@ interface Window {
 		onEditorModeChanged: (callback: (inEditor: boolean) => void) => () => void;
 		hudOverlayRendererReady: () => void;
 		hudOverlaySetWebcamPreviewVisible: (visible: boolean) => void;
+		hudOverlaySetInteractiveBounds: (
+			bounds: Array<{
+				left: number;
+				top: number;
+				right: number;
+				bottom: number;
+				shape?: "ellipse";
+			}> | null,
+		) => void;
 		getHudOverlayCaptureProtection: () => Promise<{ success: boolean; enabled: boolean }>;
 		getHudOverlayMousePassthroughSupported: () => Promise<{
 			success: boolean;
@@ -758,6 +767,10 @@ interface Window {
 		openAccessibilityPreferences: (
 			preview?: boolean,
 		) => Promise<{ success: boolean; error?: string }>;
+		suggestExportFileName?: (
+			fileName: string,
+			sidecarFormat?: "srt" | "vtt" | "both",
+		) => Promise<string | null>;
 		saveExportedVideo: (
 			videoData: ArrayBuffer,
 			fileName: string,
@@ -1028,7 +1041,10 @@ interface Window {
 		onRecordingPermissionsRequested: (callback: () => void) => () => void;
 		showRecordingHud: () => Promise<void>;
 		showOnboardingWindow: (options?: { preview?: boolean }) => Promise<boolean>;
+		replayOnboardingIntro?: () => Promise<boolean>;
 		closeOnboardingWindow: () => Promise<boolean>;
+		reportOnboardingIntro: (stage: "ready" | "finished" | "skipped") => void;
+		onOnboardingIntroShown: (callback: () => void) => () => void;
 		createProjectFile: (
 			data: unknown,
 			thumbnail?: string | null,
@@ -1164,9 +1180,18 @@ interface Window {
 		onMenuLoadProject: (callback: () => void) => () => void;
 		onMenuSaveProject: (callback: () => void) => () => void;
 		onMenuSaveProjectAs: (callback: () => void) => () => void;
-		getWindowChrome: () => Promise<{ trafficLightsVisible: boolean }>;
+		getWindowChrome: () => Promise<{
+			trafficLightsVisible: boolean;
+			customControls?: boolean;
+			maximized?: boolean;
+		}>;
+		windowControl: (action: "minimize" | "maximize" | "close") => Promise<{ success: boolean }>;
 		onWindowChromeChanged: (
-			callback: (chrome: { trafficLightsVisible: boolean }) => void,
+			callback: (chrome: {
+				trafficLightsVisible: boolean;
+				customControls?: boolean;
+				maximized?: boolean;
+			}) => void,
 		) => () => void;
 		getPlatform: () => Promise<string>;
 		isWindowFullscreen: () => Promise<boolean>;

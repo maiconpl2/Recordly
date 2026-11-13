@@ -6,6 +6,7 @@ import {
 	MicrophoneSlashIcon,
 	MinusIcon,
 	MonitorIcon,
+	SpeakerHighIcon,
 	VideoCameraIcon,
 	VideoCameraSlashIcon,
 } from "@/components/ui/icons";
@@ -19,6 +20,7 @@ import { CountdownDelayIcon } from "./CountdownDelayIcon";
 import { HudInteractionContext } from "./contexts/HudInteractionContext";
 import { FloatingWebcamPreviewView } from "./FloatingWebcamPreviewView";
 import { canToggleFloatingWebcamPreview } from "./floatingWebcamPreview";
+import { getHudInteractiveBounds } from "./hudMousePassthrough";
 import { useHudBarDrag } from "./hooks/useHudBarDrag";
 import { useHudStateTransition } from "./hooks/useHudStateTransition";
 import { useLaunchHudInteractionState } from "./hooks/useLaunchHudInteractionState";
@@ -155,6 +157,40 @@ function LaunchWindowContent() {
 		recordingWebcamPreviewContainerRef,
 		docked: showRecordingWebcamPreview,
 	});
+
+	useEffect(() => {
+		const reportInteractiveBounds = () => {
+			window.electronAPI?.hudOverlaySetInteractiveBounds?.(
+				getHudInteractiveBounds(document).map((rect) => ({
+					left: window.screenX + rect.left,
+					top: window.screenY + rect.top,
+					right: window.screenX + rect.right,
+					bottom: window.screenY + rect.bottom,
+					shape: rect.shape,
+				})),
+			);
+		};
+
+		reportInteractiveBounds();
+		// Keep native recovery current even when Windows stops forwarding mouse
+		// events. Include popovers and toasts, not just the main bar and webcam.
+		const boundsTimer = window.setInterval(reportInteractiveBounds, 100);
+		const resizeObserver = new ResizeObserver(reportInteractiveBounds);
+		if (hudBarRef.current) resizeObserver.observe(hudBarRef.current);
+		if (recordingWebcamPreviewContainerRef.current) {
+			resizeObserver.observe(recordingWebcamPreviewContainerRef.current);
+		}
+		window.addEventListener("mousemove", reportInteractiveBounds);
+		window.addEventListener("resize", reportInteractiveBounds);
+
+		return () => {
+			window.clearInterval(boundsTimer);
+			resizeObserver.disconnect();
+			window.removeEventListener("mousemove", reportInteractiveBounds);
+			window.removeEventListener("resize", reportInteractiveBounds);
+			window.electronAPI?.hudOverlaySetInteractiveBounds?.(null);
+		};
+	}, [recordingWebcamPreviewContainerRef]);
 
 	const { handleHudMouseEnter, handleHudMouseLeave, beginInteractiveHudAction } =
 		useLaunchHudInteractionState({
@@ -321,12 +357,8 @@ function LaunchWindowContent() {
 						size="icon"
 						iconSize="lg"
 						disabled={countdownActive}
-						title={
-							microphoneEnabled
-								? t("recording.disableMicrophone")
-								: t("recording.enableMicrophone")
-						}
-						className={microphoneEnabled ? "text-accent" : ""}
+						aria-label={t("recording.audioSettings", "Audio settings")}
+						className={microphoneEnabled || systemAudioEnabled ? "text-accent" : ""}
 					>
 						{microphoneEnabled ? (
 							<MicrophoneIcon
@@ -334,6 +366,8 @@ function LaunchWindowContent() {
 								className="size-5"
 								size={18}
 							/>
+						) : systemAudioEnabled ? (
+							<SpeakerHighIcon className="size-5" />
 						) : (
 							<MicrophoneSlashIcon className="size-5" />
 						)}
@@ -368,11 +402,7 @@ function LaunchWindowContent() {
 						size="icon"
 						iconSize="lg"
 						disabled={countdownActive}
-						title={
-							webcamEnabled
-								? t("recording.disableWebcam")
-								: t("recording.enableWebcam")
-						}
+						aria-label={t("recording.cameraSettings", "Camera settings")}
 						className={webcamEnabled ? "text-accent" : ""}
 					>
 						{webcamEnabled ? (
