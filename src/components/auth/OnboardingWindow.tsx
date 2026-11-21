@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { BillingSessionProvider } from "@/components/billing/BillingProvider";
 import { loadAppSetting, saveAppSetting } from "@/lib/appSettings";
 import { hasRequiredRecordingPermissions } from "@/lib/recordingPermissions";
 import { OnboardingController } from "./OnboardingController";
@@ -52,8 +53,6 @@ function ReturningOnboarding({
 		// A cold launch can carry an OAuth callback. Keep its renderer alive
 		// until the exchange and callback acknowledgement are both finished.
 		if (auth.loading || callbackActivity.pending || !signedIn) return;
-		if (loadAppSetting<boolean>("recordly.onboarding.v1.seen") !== true)
-			saveAppSetting("recordly.onboarding.v1.seen", true);
 		// On Windows and Linux, a fresh sign-in stops at Start recording.
 		if (needsStartConfirmation) return;
 		let cancelled = false;
@@ -126,16 +125,23 @@ function AccountOnboarding() {
 	return returning ? (
 		<ReturningOnboarding auth={auth} inlineRecordingStart={inlineRecordingStart} />
 	) : (
-		<OnboardingController
-			requestNonce={0}
-			ready={!auth.loading}
-			user={auth.user}
-			configured={auth.configured}
-			callbackError={auth.callbackError}
-			authenticationVersion={auth.callbackVersion}
-			authCallbackPending={auth.callbackActivity.pending}
-			standalone
-		/>
+		<BillingSessionProvider auth={auth}>
+			<OnboardingController
+				requestNonce={0}
+				ready={!auth.loading}
+				user={auth.user}
+				configured={auth.configured}
+				callbackError={auth.callbackError}
+				authenticationVersion={auth.callbackVersion}
+				authCallbackPending={auth.callbackActivity.pending}
+				onUnlockSavedSignIn={
+					!import.meta.env.DEV && auth.savedSignInLocked
+						? () => void window.electronAPI.resolveStartupOnboarding("restart")
+						: undefined
+				}
+				standalone
+			/>
+		</BillingSessionProvider>
 	);
 }
 

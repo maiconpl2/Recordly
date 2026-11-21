@@ -17,6 +17,9 @@ for (const signedIn of [false, true]) {
 						const root = document.documentElement;
 						if (action === "catalog") {
 							if (token) root.dataset.catalogAuthenticated = "true";
+							root.dataset.catalogReads = String(
+								Number(root.dataset.catalogReads ?? 0) + 1,
+							);
 							return {
 								success: true,
 								prices,
@@ -32,6 +35,17 @@ for (const signedIn of [false, true]) {
 						if (action !== "status") {
 							root.dataset.billingAction = action;
 							return { success: true };
+						}
+						if (rejectSession && !root.dataset.billingCheckStarted) {
+							await new Promise<void>((resolve) =>
+								window.addEventListener(
+									"test-release-billing-status",
+									() => resolve(),
+									{
+										once: true,
+									},
+								),
+							);
 						}
 						if (rejectSession && !root.dataset.billingReauthenticated)
 							return { success: false, httpStatus: 401 };
@@ -62,12 +76,28 @@ for (const signedIn of [false, true]) {
 			await page.goto("/?windowType=onboarding");
 			const tour = page.getByRole("dialog", { name: "Welcome to Recordly" });
 			const next = tour.getByRole("button", { name: "Next", exact: true });
+			const root = page.locator("html");
+			if (!signedIn) {
+				await expect(tour).toHaveAttribute("data-onboarding-state", "login");
+				await expect(root).toHaveAttribute("data-catalog-reads", "1");
+			}
 			if (!signedIn) await next.click();
 			await expect(tour).toHaveAttribute("data-onboarding-state", "permissions");
+			await expect(root).toHaveAttribute("data-catalog-reads", "1");
 			await next.click();
 			const start = tour.getByRole("button", { name: "Get started", exact: true });
 			await expect(tour.getByRole("radio", { name: /Monthly.*\$9/ })).toBeVisible();
-			await expect(page.locator("html")).not.toHaveAttribute("data-catalog-authenticated");
+			await expect(root).not.toHaveAttribute("data-catalog-authenticated");
+			if (signedIn) {
+				await expect(
+					tour.getByRole("button", { name: "Loading your plan…" }),
+				).toBeDisabled();
+				await expect(tour.getByText("Loading pricing…", { exact: true })).toHaveCount(0);
+				await page.evaluate(() => {
+					document.documentElement.dataset.billingCheckStarted = "true";
+					window.dispatchEvent(new Event("test-release-billing-status"));
+				});
+			}
 			await (signedIn
 				? tour.getByRole("button", { name: "Sign in to continue" })
 				: start
@@ -83,7 +113,8 @@ for (const signedIn of [false, true]) {
 			await completeSupabaseSignIn(page);
 			await expect(tour).toHaveAttribute("data-onboarding-state", "upgrade");
 			await expect(start).toBeEnabled();
-			await expect(page.locator("html")).not.toHaveAttribute("data-billing-action");
+			await expect(root).toHaveAttribute("data-catalog-reads", "1");
+			await expect(root).not.toHaveAttribute("data-billing-action");
 			await start.click();
 			await expect(page.locator("html")).toHaveAttribute("data-billing-action", "checkout");
 		},
@@ -437,8 +468,8 @@ productionTest(
 					fontWeight: heading.fontWeight,
 					lineHeight: heading.lineHeight,
 					letterSpacing: heading.letterSpacing,
-					logoWidth: logo.getBoundingClientRect().width,
-					logoHeight: logo.getBoundingClientRect().height,
+					logoWidth: getComputedStyle(logo).width,
+					logoHeight: getComputedStyle(logo).height,
 					headerGap: getComputedStyle(header).gap,
 				};
 			});
@@ -463,11 +494,7 @@ productionTest(
 		await body.evaluate((element) => {
 			element.scrollTop = element.scrollHeight;
 		});
-		await expect(
-			tour.getByText("Microphone and camera access are requested when you use them.", {
-				exact: false,
-			}),
-		).toBeInViewport();
+		await expect(tour.getByRole("status", { name: "Accessibility: Allowed" })).toBeInViewport();
 		await expect(tour.getByRole("button", { name: "Next", exact: true })).toBeInViewport();
 		await expect(tour.getByRole("navigation", { name: "Onboarding pages" })).toBeInViewport();
 		const bodyBounds = (await body.boundingBox())!;
